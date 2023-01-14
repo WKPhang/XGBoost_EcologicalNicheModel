@@ -1,2 +1,2 @@
 # XGBoost-Ecological-Niche-Model
-XGBoost Ecological Niche Model
+Code is associated with [Manuscript link]
