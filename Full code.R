@@ -9,31 +9,34 @@ library(pROC)
 library(MLmetrics)
 library(SHAPforxgboost)
 
-#### Thread 1  ####
-filenames <- list.files(path="D:/Maxent work record/221211",
+#### PART 1: Input occurence and background data from Maxent output folder
+# NOTE: This script only works if the following settings were selected when running Maxent software :
+# 1. Replicated run type: Crossvalidate or Subsample
+# The output files with predicted value and partitioning of occurrence data are created with default name pattern "samplePredictions.csv"
+
+filenames <- list.files(path="MAXENT OUTPUT FOLDER LOCATION", 
                         pattern="samplePredictions.csv", full.names=T)
-filenames
 
-setwd("D:/Maxent work record/221211")
+setwd("MAXENT OUTPUT FOLDER LOCATION") 
 
-for (file in filenames[1:30]){
-  # if the merged dataset does exist, append to it
+for (file in filenames[1:nrow(filenames)]){
+  # if the merged dataset exist, append to it
   if (exists("dataset")){
     temp_dataset <-read.table(file, header=T, sep=",")
     dataset<-left_join(dataset, temp_dataset[,c(1:3)], by = c('X' = 'X','Y'='Y'))
     column_name <- tools::file_path_sans_ext(basename(file))
     column_name <- sub("_samplePredictions", "", column_name)
-    column_name <- sub("Pk", "train", column_name)
+    column_name <- sub("species", "train", column_name)
     colnames(dataset)[ncol(dataset)] <- column_name
     rm(temp_dataset, column_name)
   }
-  # if the merged dataset doesn't exist, create it
+  # if the merged dataset does not exist, create it
   if (!exists("dataset")){
     temp_dataset <- read.table(file, header=T, sep=",")
     dataset <- temp_dataset[,c(1,2,3)]
     column_name <- tools::file_path_sans_ext(basename(file))
     column_name <- sub("_samplePredictions", "", column_name)
-    column_name <- sub("Pk", "train", column_name)
+    column_name <- sub("species", "train", column_name)
     colnames(dataset)[ncol(dataset)] <- column_name
     rm(temp_dataset, column_name)
   }
@@ -50,13 +53,13 @@ filenames_bg <- list.files(path="D:/Maxent work record/220921",
                            pattern="backgroundPredictions.csv", full.names=T)
 filenames_bg
 
-for (file in filenames_bg[1:30]){
+for (file in filenames_bg[1:nrow(filenames_bg)]){
   # if the merged dataset does exist, append to it
   if (exists("dataset_bg")){
     temp_dataset <-read.table(file, header=T, sep=",")
     dataset_bg<-cbind(dataset_bg, temp_dataset[,c(1:2)])
     column_name <- tools::file_path_sans_ext(basename(file))
-    column_name <- sub("Pk_", "", column_name)
+    column_name <- sub("Pk", "", column_name)
     colnames(dataset_bg)[ncol(dataset_bg)-1] <- sub("_backgroundPredictions","_X", column_name)
     colnames(dataset_bg)[ncol(dataset_bg)] <- sub("_backgroundPredictions","_Y", column_name)
     rm(temp_dataset, column_name)
@@ -66,7 +69,7 @@ for (file in filenames_bg[1:30]){
     temp_dataset <- read.table(file, header=T, sep=",")
     dataset_bg <- temp_dataset[,c(1:2)]
     column_name <- tools::file_path_sans_ext(basename(file))
-    column_name <- sub("Pk_", "", column_name)
+    column_name <- sub("Pk", "", column_name)
     colnames(dataset_bg)[ncol(dataset_bg)-1] <- sub("_backgroundPredictions","_X", column_name)
     colnames(dataset_bg)[ncol(dataset_bg)] <- sub("_backgroundPredictions","_Y", column_name)
     rm(temp_dataset, column_name)
@@ -76,14 +79,16 @@ dataset_bg
 
 rm(file, filenames, filenames_bg)
 
-#### Thread 2 ####
+#### PART 2: Input covariate data 
+# NOTE: Ensure that the raster layers are in ascii format
+
 # Load raster (covariates) files
-grids <- list.files(path="D:/Maxent Working directory 2.0/1km env",
+grids <- list.files(path="COVARIATE RASTER FOLDER LOCATION",
                     pattern = "*.asc$")
 grids
 new_grids <- grids[c(2,3,6,9,10,11,13,16,17,19,25,26,30,38,22)]
 rm(grids)
-setwd("D:/Maxent Working directory 2.0/1km env")
+setwd("COVARIATES RASTER FOLDER LOCATION")
 s <- stack(paste0(new_grids))
 
 # Create overlapping mask
