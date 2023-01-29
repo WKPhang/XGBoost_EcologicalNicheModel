@@ -10,9 +10,8 @@ library(MLmetrics)
 library(SHAPforxgboost)
 
 #### PART 1: Input occurence and background data from Maxent output folder
-# NOTE: This script only works if the following settings were selected when running Maxent software :
-# 1. Replicated run type: Crossvalidate or Subsample
-# The output files with predicted value and partitioning of occurrence data are created with default name pattern "samplePredictions.csv"
+# NOTE: This script only works if the Maxent software was run with replicated run type of either Crossvalidate or Subsample
+# The predicted value and partitioning of occurrence data are created with default name pattern "samplePredictions.csv"
 
 filenames <- list.files(path="MAXENT OUTPUT FOLDER LOCATION", 
                         pattern="samplePredictions.csv", full.names=T)
@@ -49,12 +48,12 @@ dataset <- dataset %>%
 dataset
 
 # Input background data
-filenames_bg <- list.files(path="D:/Maxent work record/220921",
+filenames_bg <- list.files(path="MAXENT OUTPUT FOLDER LOCATION",
                            pattern="backgroundPredictions.csv", full.names=T)
 filenames_bg
 
 for (file in filenames_bg[1:nrow(filenames_bg)]){
-  # if the merged dataset does exist, append to it
+  # if the merged dataset exist, append to it
   if (exists("dataset_bg")){
     temp_dataset <-read.table(file, header=T, sep=",")
     dataset_bg<-cbind(dataset_bg, temp_dataset[,c(1:2)])
@@ -64,7 +63,7 @@ for (file in filenames_bg[1:nrow(filenames_bg)]){
     colnames(dataset_bg)[ncol(dataset_bg)] <- sub("_backgroundPredictions","_Y", column_name)
     rm(temp_dataset, column_name)
   }
-  # if the merged dataset doesn't exist, create it
+  # if the merged dataset does not exist, create it
   if (!exists("dataset_bg")){
     temp_dataset <- read.table(file, header=T, sep=",")
     dataset_bg <- temp_dataset[,c(1:2)]
@@ -80,16 +79,15 @@ dataset_bg
 rm(file, filenames, filenames_bg)
 
 #### PART 2: Input covariate data 
-# NOTE: Ensure that the raster layers are in ascii format
+# NOTE: Ensure that all raster layers are in ascii format
 
-# Load raster (covariates) files
+# Load raster (covariates of interest) files
 grids <- list.files(path="COVARIATE RASTER FOLDER LOCATION",
                     pattern = "*.asc$")
 grids
-new_grids <- grids[c(2,3,6,9,10,11,13,16,17,19,25,26,30,38,22)]
-rm(grids)
+
 setwd("COVARIATES RASTER FOLDER LOCATION")
-s <- stack(paste0(new_grids))
+s <- stack(paste0(grids))
 
 # Create overlapping mask
 res <- raster(s)
@@ -99,7 +97,7 @@ overlap_mask <- any(s, na.rm=F)
 matrix_s <- as.matrix(s)
 dmatrix_s <- xgb.DMatrix(matrix_s[,-15])
 
-# Set up XGBoost parameter
+#### PART 3: Set up XGBoost parameter
 xgb_control_repcv <- trainControl(
   method = "repeatedcv", 
   number = 5,
@@ -123,8 +121,7 @@ xgb_grid <- base::expand.grid(
     subsample = seq(0.7,0.7, by=0.1))
 )
 
-#### Thread 3 ####
-# Full model running
+#### PART 4: Loop of full XGBoost model run and ensemble modelling
 
 for(dtset_i in 1:30){
 
@@ -147,8 +144,8 @@ ext2<-cbind(PA_data,ext)
 
 train_dt <- ext2 %>% filter(train == 1)
 test_dt <- ext2 %>% filter(test_0 == 0)
-train_dt2 <- train_dt[,c(5:19)]
-test_dt2 <- test_dt[,c(5:19)]
+train_dt2 <- train_dt[,c(5:ncol(train_dt))]
+test_dt2 <- test_dt[,c(5:ncol(train_dt))]
 train_Dmatrix <- train_dt2[,-1] %>% 
   as.matrix() %>% 
   xgb.DMatrix()  
@@ -187,17 +184,17 @@ new_res <- mask(res2,overlap_mask)
 
 print(paste("Prediction done ", dtset_i, sep=""))
 
-writeRaster(new_res, filename = paste("D:/Maxent Working directory 2.0/XGBraster_output/XGBraster_",
+writeRaster(new_res, filename = paste("OUTPUT FILE DIRECTORY", #Set a file a directory for saving all raster output
                                       colnames(dataset)[dtset_i+2], 
                                       ".tif", sep = ""), overwrite=T)
             
 
-maxent_list <- list.files(path="D:/Maxent work record/220921",
+maxent_list <- list.files(path="MAXENT OUTPUT FOLDER LOCATION",
                     pattern = c("*.asc$"))
 maxent_list
 maxent_list2 <- Filter(function(x) !any(grepl("1km", x)), maxent_list)[1:30]
 maxent_list2
-setwd("D:/Maxent work record/220921")
+setwd("MAXENT OUTPUT FOLDER LOCATION")
 maxent_0 <- raster(maxent_list2[dtset_i])
 ensemble_0 <- (maxent_0 + new_res)/2
 crs(ensemble_0) <- crs(new_res) 
@@ -219,6 +216,8 @@ write.csv(compare, file = paste("D:/Maxent Working directory 2.0/Comparison_tabl
 print(paste("end ", dtset_i, sep=""))
 }
 
+                       
+                       
 #### Thead 4 ####
 
 compare_list <- list.files(path="D:/Maxent Working directory 2.0/Comparison_table_output",
