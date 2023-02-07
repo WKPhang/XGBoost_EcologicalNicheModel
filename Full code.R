@@ -122,7 +122,7 @@ xgb_grid <- base::expand.grid(
 )
 
 #### PART 4: Loop of full XGBoost model run and ensemble modelling
-
+# The loop starts at line 126 and end at line
 for(dtset_i in 1:30){
 
 print(paste("start ", dtset_i, sep=""))
@@ -146,22 +146,27 @@ train_dt <- ext2 %>% filter(train == 1)
 test_dt <- ext2 %>% filter(test_0 == 0)
 train_dt2 <- train_dt[,c(5:ncol(train_dt))]
 test_dt2 <- test_dt[,c(5:ncol(train_dt))]
-train_Dmatrix <- train_dt2[,-1] %>% 
-  as.matrix() %>% 
-  xgb.DMatrix()  
-test_Dmatrix <- test_dt2[,-1] %>% 
-  as.matrix() %>% 
-  xgb.DMatrix()
-targets <- as.factor(ifelse(train_dt2$presence==1, "y1", "y2"))
+
+# Create weight information, this step can be removed if unneccessary
 weight_1 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 1)))
 weight_0 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 0)))
+weight_matrix <- ifelse(train_dt2$presence==1, weight_1*train_dt$BIAS_LAYER, #replace the BIAS_LAYER with actual column name
+                        weight_0*train_dt$BIAS_LAYER) #replace the BIAS_LAYER
 
-weight_matrix <- ifelse(train_dt2$presence==1, weight_1*train_dt$log10_popden_bias_1km,
-                        weight_0*train_dt$log10_popden_bias_1km)
-train_Dmatrix <- train_dt2[,-1] %>% 
+# Create Dmatrix to input covariate data into XGBoost model
+# The dependent variable "presence" (indicate occurrence) and sampling bias variable "BIAS LAYER" were exxcluded from the covariate Dmatrix
+train_Dmatrix <- train_dt2[,-1] %>%
+  select(-c(presence, BIAS LAYER)) %>% #replace the BIAS_LAYER with actual column name
   as.matrix() %>% 
   xgb.DMatrix(weight=weight_matrix) 
+test_Dmatrix <- test_dt2[,-1]
+  select(-c(presence, BIAS LAYER)) %>% #replace the BIAS_LAYER with actual column name
+  as.matrix() %>% 
+  xgb.DMatrix()
 
+targets <- as.factor(ifelse(train_dt2$presence==1, "y1", "y2"))  
+
+# Run XGBoost model
 set.seed(999)
 model_xgb <- caret::train(
   objective = "binary:logistic",
@@ -174,21 +179,23 @@ model_xgb <- caret::train(
 
 print(paste("XGB done ", dtset_i, sep=""))
 
+# Turn the model prediction into raster
+# The predicted raster is denoted as "new_res" here
 result  <- raster::predict(model_xgb,
                           dmatrix_s,
                           na.rm =T, inf.rm = T,
                           type="prob")
-
 res2 <- setValues(res,result$y1)
 new_res <- mask(res2,overlap_mask)
 
 print(paste("Prediction done ", dtset_i, sep=""))
 
-writeRaster(new_res, filename = paste("OUTPUT FILE DIRECTORY", #Set a file a directory for saving all raster output
+#Set a file a directory for saving all raster output
+writeRaster(new_res, filename = paste("OUTPUT FILE LOCATION", 
                                       colnames(dataset)[dtset_i+2], 
                                       ".tif", sep = ""), overwrite=T)
             
-
+# Input MaxEnt output raster
 maxent_list <- list.files(path="MAXENT OUTPUT FOLDER LOCATION",
                     pattern = c("*.asc$"))
 maxent_list
@@ -196,36 +203,40 @@ maxent_list2 <- Filter(function(x) !any(grepl("1km", x)), maxent_list)[1:30]
 maxent_list2
 setwd("MAXENT OUTPUT FOLDER LOCATION")
 maxent_0 <- raster(maxent_list2[dtset_i])
+
+# Create ensemble output by simple average of corresponding MaxEnt and XGBoost outputs                       
 ensemble_0 <- (maxent_0 + new_res)/2
 crs(ensemble_0) <- crs(new_res) 
-writeRaster(ensemble_0, filename = paste("D:/Maxent Working directory 2.0/Ensembleraster_output/Ensemble_",
+                       
+# Generate ensemble output raster and save it into a single folder
+writeRaster(ensemble_0, filename = paste("ENSEMBLE OUTPUT FOLDER LOCATION",
                                       colnames(dataset)[dtset_i+2], 
                                       ".tif", sep = ""), overwrite=T)
 
 print(paste("Ensemble done ", dtset_i, sep=""))
-           
+
+# Extract and assemble all actual/observed and predicted occurrence (dependent variable)
 max_r_0 <-extract(maxent_0,PA_data[,1:2])
 xgb_r_0 <-extract(new_res,PA_data[,1:2])
 ens_r_0 <-extract(ensemble_0,PA_data[,1:2])
 compare<-cbind(PA_data,max_r_0, xgb_r_0, ens_r_0)
 
-write.csv(compare, file = paste("D:/Maxent Working directory 2.0/Comparison_table_output/compare_",
+# Save the assembled dataset for model performance comparison in PART 5
+write.csv(compare, file = paste("ASSEMBLED MODEL OUTPUT LOCATION",
                                          colnames(dataset)[dtset_i+2], 
                                          ".csv", sep = ""), row.names = F)
 
 print(paste("end ", dtset_i, sep=""))
 }
 
-                       
-                       
-#### Thead 4 ####
-
-compare_list <- list.files(path="D:/Maxent Working directory 2.0/Comparison_table_output",
+#### PART 5: Model performance comparison
+# List all assembled actual and predicted occurrence file 
+compare_list <- list.files(path="ASSEMBLED MODEL OUTPUT LOCATION",
                     pattern = "*.csv$")
 setwd("D:/Maxent Working directory 2.0/Comparison_table_output")
-
 compare_list
 
+#Calculate the evaluation mertrics (AUC, sensitivitiy, specificity, and F1) for both train and test dataset per model
 for (file in compare_list[1:30]){
   compare <- read.csv(file, header=T, sep=",", stringsAsFactors=T)
   comp_tr <- compare %>% filter(train == 1)
@@ -278,34 +289,28 @@ for (file in compare_list[1:30]){
   Dd <- CM_xgb_te$byClass[7]
   De <- CM_ens_tr$byClass[7]
   Df <- CM_ens_te$byClass[7]
-  
-  Ea <- PRAUC(comp_tr[,6],comp_tr$presence)
-  Eb <- PRAUC(comp_te[,6],comp_te$presence)
-  Ec <- PRAUC(comp_tr[,7],comp_tr$presence)
-  Ed <- PRAUC(comp_te[,7],comp_te$presence)
-  Ee <- PRAUC(comp_tr[,8],comp_tr$presence)
-  Ef <- PRAUC(comp_te[,8],comp_te$presence)
+
   # if the merged dataset does exist, append to it
   if (exists("Full_table")){
     Full_table <- rbind(Full_table, data.frame(Aa,Ab,Ac,Ad,Ae,Af,
                                                Ba,Bb,Bc,Bd,Be,Bf,
                                                Ca,Cb,Cc,Cd,Ce,Cf,
-                                               Da,Db,Dc,Dd,De,Df, 
-                                               Ea,Eb,Ec,Ed,Ee,Ef, row.names = file))
+                                               Da,Db,Dc,Dd,De,Df, row.names = file))
   }
   # if the merged dataset doesn't exist, create it
   if (!exists("Full_table")){
     Full_table <-  data.frame(Aa,Ab,Ac,Ad,Ae,Af,
                               Ba,Bb,Bc,Bd,Be,Bf,
                               Ca,Cb,Cc,Cd,Ce,Cf,
-                              Da,Db,Dc,Dd,De,Df, 
-                              Ea,Eb,Ec,Ed,Ee,Ef, row.names = file)
+                              Da,Db,Dc,Dd,De,Df, row.names = file)
   }
 }
 
 Full_table
 Full_comparison <- as.data.frame(Full_table)
 Full_comparison
+
+# suffixes "max", "xgb", and "ens" indicate MaxEnt, XGBoost, and ensemble respectively
 colnames(Full_comparison) <- c("auc_train_max", "auc_test_max",
                                "auc_train_xgb", "auc_test_xgb",
                                "auc_train_ens", "auc_test_ens",
@@ -317,15 +322,11 @@ colnames(Full_comparison) <- c("auc_train_max", "auc_test_max",
                                "spec_train_ens", "spec_test_ens",
                                "f1_train_max", "f1_test_max",
                                "f1_train_xgb", "f1_test_xgb",
-                               "f1_train_ens", "f1_test_ens",
-                               "aucpr_train_max", "aucpr_test_max",
-                               "aucpr_train_xgb", "aucpr_test_xgb",
-                               "aucpr_train_ens", "aucpr_test_ens")
+                               "f1_train_ens", "f1_test_ens")
 
-Full_comparison
-summary(Full_comparison)
-ddddd <- ddddd+1
-sd(Full_comparison[,ddddd])
+# Calculate mean and standard deviation (SD) or each metric column
+column_mean <- apply(Full_comparison, 2, mean, na.rm = TRUE)
+column_sd <- apply(Full_comparison, 2, mean, na.rm = TRUE)
 
 ###############
 
