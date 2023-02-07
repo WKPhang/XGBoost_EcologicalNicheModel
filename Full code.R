@@ -13,10 +13,10 @@ library(SHAPforxgboost)
 # NOTE: This script only works if the Maxent software was run with replicated run type of either Crossvalidate or Subsample
 # The predicted value and partitioning of occurrence data are created with default name pattern "samplePredictions.csv"
 
-filenames <- list.files(path="MAXENT OUTPUT FOLDER LOCATION", 
+filenames <- list.files(path="MAXENT OUTPUT FILE LOCATION", 
                         pattern="samplePredictions.csv", full.names=T)
 
-setwd("MAXENT OUTPUT FOLDER LOCATION") 
+setwd("MAXENT OUTPUT FILE LOCATION") 
 
 for (file in filenames[1:nrow(filenames)]){
   # if the merged dataset exist, append to it
@@ -48,7 +48,7 @@ dataset <- dataset %>%
 dataset
 
 # Input background data
-filenames_bg <- list.files(path="MAXENT OUTPUT FOLDER LOCATION",
+filenames_bg <- list.files(path="MAXENT OUTPUT FILE LOCATION",
                            pattern="backgroundPredictions.csv", full.names=T)
 filenames_bg
 
@@ -122,11 +122,9 @@ xgb_grid <- base::expand.grid(
 )
 
 #### PART 4: Loop of full XGBoost model run and ensemble modelling
-# The loop starts at line 126 and end at line
+# The loop starts at line 126 
 for(dtset_i in 1:30){
-
 print(paste("start ", dtset_i, sep=""))
-  
 {
   case_presence <- dataset[,c(1:2,dtset_i+2,dtset_i+2)]
   background <- dataset_bg[,c((dtset_i*2)-1, dtset_i*2)]
@@ -191,17 +189,17 @@ new_res <- mask(res2,overlap_mask)
 print(paste("Prediction done ", dtset_i, sep=""))
 
 #Set a file a directory for saving all raster output
-writeRaster(new_res, filename = paste("OUTPUT FILE LOCATION", 
+writeRaster(new_res, filename = paste("XGB OUTPUT FILE LOCATION", 
                                       colnames(dataset)[dtset_i+2], 
                                       ".tif", sep = ""), overwrite=T)
             
 # Input MaxEnt output raster
-maxent_list <- list.files(path="MAXENT OUTPUT FOLDER LOCATION",
+maxent_list <- list.files(path="MAXENT OUTPUT FILE LOCATION",
                     pattern = c("*.asc$"))
 maxent_list
 maxent_list2 <- Filter(function(x) !any(grepl("1km", x)), maxent_list)[1:30]
 maxent_list2
-setwd("MAXENT OUTPUT FOLDER LOCATION")
+setwd("MAXENT OUTPUT FILE LOCATION")
 maxent_0 <- raster(maxent_list2[dtset_i])
 
 # Create ensemble output by simple average of corresponding MaxEnt and XGBoost outputs                       
@@ -209,7 +207,7 @@ ensemble_0 <- (maxent_0 + new_res)/2
 crs(ensemble_0) <- crs(new_res) 
                        
 # Generate ensemble output raster and save it into a single folder
-writeRaster(ensemble_0, filename = paste("ENSEMBLE OUTPUT FOLDER LOCATION",
+writeRaster(ensemble_0, filename = paste("ENSEMBLE OUTPUT FILE LOCATION",
                                       colnames(dataset)[dtset_i+2], 
                                       ".tif", sep = ""), overwrite=T)
 
@@ -221,7 +219,7 @@ xgb_r_0 <-extract(new_res,PA_data[,1:2])
 ens_r_0 <-extract(ensemble_0,PA_data[,1:2])
 compare<-cbind(PA_data,max_r_0, xgb_r_0, ens_r_0)
 
-# Save the assembled dataset for model performance comparison in PART 5
+# Save the assembled dataset for subsequent model performance comparison in PART 5
 write.csv(compare, file = paste("ASSEMBLED MODEL OUTPUT LOCATION",
                                          colnames(dataset)[dtset_i+2], 
                                          ".csv", sep = ""), row.names = F)
@@ -324,94 +322,115 @@ colnames(Full_comparison) <- c("auc_train_max", "auc_test_max",
                                "f1_train_xgb", "f1_test_xgb",
                                "f1_train_ens", "f1_test_ens")
 
+# Save the model performance comparison metrics
+write.csv(Full_comparison, file = paste("ASSEMBLED MODEL OUTPUT LOCATION",
+                                         "model_performance_comparison", 
+                                         ".csv", sep = ""), row.names = F)                       
+
 # Calculate mean and standard deviation (SD) or each metric column
 column_mean <- apply(Full_comparison, 2, mean, na.rm = TRUE)
 column_sd <- apply(Full_comparison, 2, mean, na.rm = TRUE)
 
-###############
-
-write.csv(Full_comparison, file = "D:/Maxent Working directory 2.0/Full_comparison.csv")
-
-#### Thread 5 ####
+summary_df <- rbind(column_mean, column_sd)
+row.names(summary_df) <- c("mean", "SD")
+colnames(summary_df) <- c("auc_train_max", "auc_test_max",
+                               "auc_train_xgb", "auc_test_xgb",
+                               "auc_train_ens", "auc_test_ens",
+                               "sens_train_max", "sens_test_max",
+                               "sens_train_xgb", "sens_test_xgb",
+                               "sens_train_ens", "sens_test_ens",
+                               "spec_train_max", "spec_test_max",
+                               "spec_train_xgb", "spec_test_xgb",
+                               "spec_train_ens", "spec_test_ens",
+                               "f1_train_max", "f1_test_max",
+                               "f1_train_xgb", "f1_test_xgb",
+                               "f1_train_ens", "f1_test_ens")
+summary_df
+ 
+#### PART 6: Create mean output raster for each model 
 #Average raster output
-xgb_list <- list.files(path="D:/Maxent Working directory 2.0/XGBraster_output/",
+xgb_list <- list.files(path="XGB OUTPUT FILE LOCATION",
                     pattern = "*.tif$")
-setwd("D:/Maxent Working directory 2.0/XGBraster_output")
+setwd("XGB OUTPUT FILE LOCATION")
 xgb_rasters <- stack(paste0(xgb_list))
 xgb_avg <- mean(xgb_rasters)
 plot(xgb_avg)
-writeRaster(xgb_avg, filename = paste("D:/Maxent Working directory 2.0/XGBraster_mean",
+writeRaster(xgb_avg, filename = paste("ASSEMBLED MODEL OUTPUT LOCATION",
+                                      "XGBraster_mean",
                                        ".tif", sep = ""), overwrite=T)
 
-
-ens_list <- list.files(path="D:/Maxent Working directory 2.0/Ensembleraster_output/",
+ens_list <- list.files(path="ENSEMBLE OUTPUT FILE LOCATION",
                        pattern = "*.tif$")
-setwd("D:/Maxent Working directory 2.0/Ensembleraster_output")
+setwd("ENSEMBLE OUTPUT FILE LOCATION")
 ens_rasters <- stack(paste0(ens_list))
 ens_avg <- mean(ens_rasters)
 plot(ens_avg)
-writeRaster(ens_avg, filename = paste("D:/Maxent Working directory 2.0/Ensembleraster_mean",
+writeRaster(ens_avg, filename = paste("ASSEMBLED MODEL OUTPUT LOCATION",
+                                      "Ensembleraster_mean",
                                       ".tif", sep = ""), overwrite=T)
 
-
-#### Thread 6 ####
+#### PART 7: SHAP analysis for XGBoost model
 #SHAP value for all dataset
 for(dtset_i in 1:30){
-  print(paste("start ", dtset_i, sep=""))
+print(paste("start ", dtset_i, sep=""))
+{
+  case_presence <- dataset[,c(1:2,dtset_i+2,dtset_i+2)]
+  background <- dataset_bg[,c((dtset_i*2)-1, dtset_i*2)]
+  colnames(case_presence)[1:4] <- c("X", "Y", "train","test_0")
+  colnames(background)[1:2] <- c("X","Y")
+  background$train <- 1
+  background$test_0 <- 0
+  case_presence$presence <- 1
+  background$presence <- 0
+  PA_data <- rbind(case_presence,background)
+}
+
+ext<-extract(s,PA_data[,1:2])
+ext2<-cbind(PA_data,ext)
+
+train_dt <- ext2 %>% filter(train == 1)
+test_dt <- ext2 %>% filter(test_0 == 0)
+train_dt2 <- train_dt[,c(5:ncol(train_dt))]
+test_dt2 <- test_dt[,c(5:ncol(train_dt))]
+
+# Create weight information, this step can be removed if unneccessary
+weight_1 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 1)))
+weight_0 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 0)))
+weight_matrix <- ifelse(train_dt2$presence==1, weight_1*train_dt$BIAS_LAYER, #replace the BIAS_LAYER with actual column name
+                        weight_0*train_dt$BIAS_LAYER) #replace the BIAS_LAYER
+
+# Create Dmatrix to input covariate data into XGBoost model
+# The dependent variable "presence" (indicate occurrence) and sampling bias variable "BIAS LAYER" were exxcluded from the covariate Dmatrix
+train_Dmatrix <- train_dt2[,-1] %>%
+  select(-c(presence, BIAS LAYER)) %>% #replace the BIAS_LAYER with actual column name
+  as.matrix() %>% 
+  xgb.DMatrix(weight=weight_matrix) 
+test_Dmatrix <- test_dt2[,-1]
+  select(-c(presence, BIAS LAYER)) %>% #replace the BIAS_LAYER with actual column name
+  as.matrix() %>% 
+  xgb.DMatrix()
+
+targets <- as.factor(ifelse(train_dt2$presence==1, "y1", "y2"))  
+
+# Run XGBoost model
+set.seed(999)
+model_xgb <- caret::train(
+  objective = "binary:logistic",
+  train_Dmatrix,targets,
+  trControl = xgb_control_repcv,
+  tuneGrid = xgb_grid,
+  metric ="ROC",
+  method = "xgbTree"
+)
+
+print(paste("XGB done ", dtset_i, sep=""))
+
+# Start conducting SHAP analysis
+print(paste("doing SHAP", dtset_i, sep="")) 
+shap_values <- shap.values(xgb_model = model_xgb$finalModel, X_train = train_Dmatrix)
+shap_values$mean_shap_score
   
-  {
-    case_presence <- dataset[,c(1:2,dtset_i+2,dtset_i+2)]
-    background <- dataset_bg[,c((dtset_i*2)-1, dtset_i*2)]
-    colnames(case_presence)[1:4] <- c("X", "Y", "train","test_0")
-    colnames(background)[1:2] <- c("X","Y")
-    background$train <- 1
-    background$test_0 <- 0
-    case_presence$presence <- 1
-    background$presence <- 0
-    PA_data <- rbind(case_presence,background)
-  }
-  
-  ext<-extract(s,PA_data[,1:2])
-  ext2<-cbind(PA_data,ext)
-  
-  train_dt <- ext2 %>% filter(train == 1)
-  test_dt <- ext2 %>% filter(test_0 == 0)
-  train_dt2 <- train_dt[,c(5:19)]
-  test_dt2 <- test_dt[,c(5:19)]
-  train_Dmatrix <- train_dt2[,-1] %>% 
-    as.matrix() %>% 
-    xgb.DMatrix()  
-  test_Dmatrix <- test_dt2[,-1] %>% 
-    as.matrix() %>% 
-    xgb.DMatrix()
-  targets <- as.factor(ifelse(train_dt2$presence==1, "y1", "y2"))
-  weight_1 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 1)))
-  weight_0 <-nrow(train_dt2)/(2*nrow(subset(train_dt2, presence == 0)))
-  
-  weight_matrix <- ifelse(train_dt2$presence==1, weight_1*train_dt$log10_popden_bias_1km,
-                          weight_0*train_dt$log10_popden_bias_1km)
-  train_Dmatrix <- train_dt2[,-1] %>% 
-    as.matrix() %>% 
-    xgb.DMatrix(weight=weight_matrix) 
-  
-  set.seed(999)
-  model_xgb <- caret::train(
-    objective = "binary:logistic",
-    train_Dmatrix,targets,
-    trControl = xgb_control_repcv,
-    tuneGrid = xgb_grid,
-    metric ="ROC",
-    method = "xgbTree"
-  )
- 
-  print(paste("XGB done ", dtset_i, sep=""))
-  
-  print(paste("doing SHAP", dtset_i, sep=""))
-  
-  shap_values <- shap.values(xgb_model = model_xgb$finalModel, X_train = train_Dmatrix)
-  shap_values$mean_shap_score
-  
-  if (exists("SHAP_table")){
+if (exists("SHAP_table")){
     temp_SHAP <- data.frame(shap_values$mean_shap_score)
     SHAP_cov <- rownames(temp_SHAP)
     temp_SHAP2 <- data.frame(SHAP_cov, temp_SHAP)
@@ -421,7 +440,7 @@ for(dtset_i in 1:30){
     rm(temp_SHAP, SHAP_cov, column_name, temp_SHAP2)
   }
   
-  if (!exists("SHAP_table")){
+if (!exists("SHAP_table")){
     temp_SHAP <- data.frame(shap_values$mean_shap_score)
     SHAP_cov <- rownames(temp_SHAP)
     SHAP_table <- data.frame(SHAP_cov, temp_SHAP)
@@ -433,38 +452,7 @@ for(dtset_i in 1:30){
   print(paste("SHAP done ", dtset_i, sep=""))
 }
 
-write.csv(SHAP_table, file = "D:/Maxent Working directory 2.0/XGB_SHAP_forest.csv")
-
-#### Thread 7 ####
-random_pt <- read.csv("D:/Maxent Working directory 2.0/Density plot/random_points.csv" , header=T)
-random_pt
-
-xgb_mean <- raster("D:/Maxent Working directory 2.0/XGBraster_mean.tif")
-ens_mean <- raster("D:/Maxent Working directory 2.0/Ensembleraster_mean.tif")
-
-ext_xgb<-extract(xgb_mean,random_pt[,1:2])
-ext_ens<-extract(ens_mean, random_pt[,1:2])
-
-random_pt_all<-cbind(random_pt,ext_xgb,ext_ens)
-
-kd1 <- density(random_pt_all$value)
-kd2 <- density(random_pt_all$ext_xgb)
-kd3 <- density(random_pt_all$ext_ens)
-plot(kd1, col='blue', lwd=3)
-lines(kd2, col='red', lwd=3)
-lines(kd3, col='orange', lwd=3)
-
-cor.test(random_pt_all$value,random_pt_all$ext_xgb , method = "spearman")
-cor.test(random_pt_all$value,random_pt_all$ext_ens , method = "spearman")
-cor.test(random_pt_all$ext_xgb,random_pt_all$ext_ens , method = "spearman")
-
-#### Miscellanous
-
-shap_long <- shap.prep(xgb_model = model_xgb$finalModel, X_train = as.matrix(train_dt2[,-c(1)]))
-if (exists("SHAP_long_table")){
-  SHAP_long_table <- rbind(SHAP_long_table, data.frame(shap_long))
-}
-if (!exists("SHAP_long_table")){
-  SHAP_long_table <- data.frame(shap_long)
-}
-
+# Save the merged table of generated SHAP values
+write.csv(SHAP_table, filename = paste("ASSEMBLED MODEL OUTPUT LOCATION",
+                                      "SHAP_table",
+                                      ".tif", sep = ""), overwrite=T)
