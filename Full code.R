@@ -231,7 +231,7 @@ print(paste("end ", dtset_i, sep=""))
 # List all assembled actual and predicted occurrence file 
 compare_list <- list.files(path="ASSEMBLED MODEL OUTPUT LOCATION",
                     pattern = "*.csv$")
-setwd("D:/Maxent Working directory 2.0/Comparison_table_output")
+setwd("WORKING DIRECTORY")
 compare_list
 
 #Calculate the evaluation mertrics (AUC, sensitivitiy, specificity, and F1) for both train and test dataset per model
